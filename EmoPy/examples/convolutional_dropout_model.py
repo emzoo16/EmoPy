@@ -3,18 +3,25 @@ from EmoPy.src.directory_data_loader import DirectoryDataLoader
 from EmoPy.src.csv_data_loader import CSVDataLoader
 from EmoPy.src.data_generator import DataGenerator
 from EmoPy.src.neuralnets import ConvolutionalNNDropout
+from keras.losses import categorical_crossentropy
+from keras.optimizers import Adam
 from sklearn.model_selection import train_test_split
+from keras.models import load_model
 import numpy as np
 import pandas as pd
 
 from pkg_resources import resource_filename, resource_exists
 
-dataset = "sample_image_directory"
-model_type = "conv_dropout"
-batch_size = 32
-epochs = 1
+dataset = "ferplus_subset"
+model_name = "conv_dropout"
+batch_size = 64
+epochs = 50
 
-model_name = dataset + "_" + model_type + "_" + str(epochs)
+# model_file_name = dataset + "_" + model_name + \
+#     "_" + str(epochs) + "_" + str(batch_size)
+
+model_file_name = dataset + "_" + model_name + \
+    "_80_" + str(batch_size)
 
 target_dimensions = (48, 48)
 channels = 1
@@ -45,21 +52,29 @@ print('Training net...')
 model = ConvolutionalNNDropout(
     target_dimensions, channels, emotion_map, verbose=True)
 
+pretrained_model = load_model(
+    './output/ferplus_subset_conv_dropout_30_64.h5')
+
 # neuralnets.fit_generator not keras.models.fit_generator
-history = model.fit_generator(train_gen.generate(target_dimensions, batch_size=batch_size),
-                              test_gen.generate(
-                                  target_dimensions, batch_size=batch_size),
-                              epochs=epochs)
+# history = model.fit_generator(train_gen.generate(target_dimensions, batch_size=batch_size),
+#                               test_gen.generate(
+#                                   target_dimensions, batch_size=batch_size),
+#                               epochs=epochs)
+
+history = model.continue_training_model(pretrained_model, train_gen.generate(target_dimensions, batch_size=batch_size),
+                                        test_gen.generate(
+    target_dimensions, batch_size=batch_size),
+    epochs=epochs)
 
 hist_df = pd.DataFrame(history.history)
 
 # save to json file
-hist_json_file = "output/" + model_name + ".json"
+hist_json_file = "output/" + model_file_name + ".json"
 with open(hist_json_file, mode='w') as f:
     hist_df.to_json(f)
 
 # Save model configuration (src.nueralnets.save_model)
-model.save_model("output/" + model_name + ".h5", "output/" +
-                 model_name + "_emotion_map.json", emotion_map)
+model.save_model("output/" + model_file_name + ".h5", "output/" +
+                 model_file_name + "_emotion_map.json", emotion_map)
 
 print("model successfully saved")

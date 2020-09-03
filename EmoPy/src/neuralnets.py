@@ -27,16 +27,28 @@ class _FERNeuralNet(object):
         self._init_model()
 
     def _init_model(self):
-        raise NotImplementedError("Class %s doesn't implement _init_model()" % self.__class__.__name__)
+        raise NotImplementedError(
+            "Class %s doesn't implement _init_model()" % self.__class__.__name__)
 
     def fit(self, x_train, y_train):
-        raise NotImplementedError("Class %s doesn't implement fit()" % self.__class__.__name__)
+        raise NotImplementedError(
+            "Class %s doesn't implement fit()" % self.__class__.__name__)
 
     def fit_generator(self, generator, validation_data=None, epochs=50):
-        #self.model.compile(optimizer="RMSProp", loss="cosine_proximity", metrics=["accuracy"])
-        self.model.compile(optimizer=Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-7), loss=categorical_crossentropy, metrics=['accuracy'])
-        self.model.fit_generator(generator=generator, validation_data=validation_data, epochs=epochs,
-                                 callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3), PlotLosses()])
+        # self.model.compile(optimizer="RMSProp", loss="cosine_proximity", metrics=["accuracy"])
+        self.model.compile(optimizer=Adam(lr=0.001, beta_1=0.9, beta_2=0.999,
+                                          epsilon=1e-7), loss=categorical_crossentropy, metrics=['accuracy'])
+        history = self.model.fit_generator(generator=generator, validation_data=validation_data, epochs=epochs,
+                                           callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=5), PlotLosses()])
+        return history
+
+    def continue_training_model(self, model, generator, validation_data=None, epochs=50):
+        self.model.compile(optimizer=Adam(lr=0.001, beta_1=0.9, beta_2=0.999,
+                                          epsilon=1e-7), loss=categorical_crossentropy, metrics=['accuracy'])
+        history = model.fit_generator(generator=generator, validation_data=validation_data, epochs=epochs,
+                                      callbacks=[ReduceLROnPlateau(), EarlyStopping(
+                                          patience=5), PlotLosses()])
+        return history
 
     def predict(self, images):
         self.model.predict(images)
@@ -55,6 +67,12 @@ class _FERNeuralNet(object):
         with open(emotion_map_filepath, 'w') as fp:
             json.dump(emotion_map, fp)
 
+    def save_model(self, model_filepath, emotion_map_filepath, emotion_map):
+        self.model.save(model_filepath)
+
+        with open(emotion_map_filepath, 'w') as fp:
+            json.dump(emotion_map, fp)
+
 
 class TransferLearningNN(_FERNeuralNet):
     """
@@ -65,7 +83,8 @@ class TransferLearningNN(_FERNeuralNet):
 
     **Example**::
 
-        model = TransferLearningNN(model_name='inception_v3', target_labels=[0,1,2,3,4,5,6])
+        model = TransferLearningNN(
+            model_name='inception_v3', target_labels=[0,1,2,3,4,5,6])
         model.fit(images, labels, validation_split=0.15)
 
     """
@@ -85,13 +104,16 @@ class TransferLearningNN(_FERNeuralNet):
         top_layer_model = base_model.output
         top_layer_model = GlobalAveragePooling2D()(top_layer_model)
         top_layer_model = Dense(1024, activation='relu')(top_layer_model)
-        prediction_layer = Dense(output_dim=len(self.emotion_map.keys()), activation='softmax')(top_layer_model)
+        prediction_layer = Dense(output_dim=len(
+            self.emotion_map.keys()), activation='softmax')(top_layer_model)
 
         model = Model(input=base_model.input, output=prediction_layer)
+        print("model summary\n")
         print(model.summary())
         for layer in base_model.layers:
             layer.trainable = False
-        model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['accuracy'])
+        model.compile(optimizer='rmsprop',
+                      loss='categorical_crossentropy', metrics=['accuracy'])
 
         self.model = model
 
@@ -100,15 +122,15 @@ class TransferLearningNN(_FERNeuralNet):
         :return: base model from Keras based on user-supplied model name
         """
         if self.model_name == 'inception_v3':
-            return InceptionV3(weights='imagenet', include_top=False)
+            return InceptionV3(weights='imagenet', include_top=False, input_shape=(128, 128, 3))
         elif self.model_name == 'xception':
-            return Xception(weights='imagenet', include_top=False)
+            return Xception(weights='imagenet', include_top=False, input_shape=(128, 128, 3))
         elif self.model_name == 'vgg16':
-            return VGG16(weights='imagenet', include_top=False)
+            return VGG16(weights='imagenet', include_top=False, input_shape=(128, 128, 3))
         elif self.model_name == 'vgg19':
-            return VGG19(weights='imagenet', include_top=False)
+            return VGG19(weights='imagenet', include_top=False, input_shape=(128, 128, 3))
         elif self.model_name == 'resnet50':
-            return ResNet50(weights='imagenet', include_top=False)
+            return ResNet50(weights='imagenet', include_top=False, input_shape=(128, 128, 3))
         else:
             raise ValueError('Cannot find base model %s' % self.model_name)
 
@@ -122,7 +144,7 @@ class TransferLearningNN(_FERNeuralNet):
         :param epochs: Max number of times to train over dataset.
         """
         self.model.fit(x=features, y=labels, epochs=epochs, verbose=1,
-                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3)], validation_split=validation_split,
+                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=5)], validation_split=validation_split,
                        shuffle=True)
 
         for layer in self.model.layers[:self._NUM_BOTTOM_LAYERS_TO_RETRAIN]:
@@ -130,10 +152,12 @@ class TransferLearningNN(_FERNeuralNet):
         for layer in self.model.layers[self._NUM_BOTTOM_LAYERS_TO_RETRAIN:]:
             layer.trainable = True
 
-        self.model.compile(optimizer='sgd', loss='categorical_crossentropy', metrics=['accuracy'])
+        self.model.compile(
+            optimizer='sgd', loss='categorical_crossentropy', metrics=['accuracy'])
         self.model.fit(x=features, y=labels, epochs=50, verbose=1,
-                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3)], validation_split=validation_split,
+                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=5)], validation_split=validation_split,
                        shuffle=True)
+
 
 class ConvolutionalLstmNN(_FERNeuralNet):
     """
@@ -150,7 +174,8 @@ class ConvolutionalLstmNN(_FERNeuralNet):
 
     **Example**::
 
-        net = ConvolutionalLstmNN(target_dimensions=(64,64), channels=1, target_labels=[0,1,2,3,4,5,6], time_delay=3)
+        net = ConvolutionalLstmNN(target_dimensions=(
+            64,64), channels=1, target_labels=[0,1,2,3,4,5,6], time_delay=3)
         net.fit(features, labels, validation_split=0.15)
 
     """
@@ -173,16 +198,20 @@ class ConvolutionalLstmNN(_FERNeuralNet):
         """
         model = Sequential()
         model.add(ConvLSTM2D(filters=self.filters, kernel_size=self.kernel_size, activation=self.activation,
-                             input_shape=[self.time_delay] + list(self.image_size) + [self.channels],
+                             input_shape=[self.time_delay] +
+                             list(self.image_size) + [self.channels],
                              data_format='channels_last', return_sequences=True))
         model.add(BatchNormalization())
         model.add(ConvLSTM2D(filters=self.filters, kernel_size=self.kernel_size, activation=self.activation,
-                             input_shape=(self.time_delay, self.channels) + self.image_size,
+                             input_shape=(self.time_delay,
+                                          self.channels) + self.image_size,
                              data_format='channels_last', return_sequences=True))
         model.add(BatchNormalization())
-        model.add(ConvLSTM2D(filters=self.filters, kernel_size=self.kernel_size, activation=self.activation))
+        model.add(ConvLSTM2D(filters=self.filters,
+                             kernel_size=self.kernel_size, activation=self.activation))
         model.add(BatchNormalization())
-        model.add(Conv2D(filters=1, kernel_size=self.kernel_size, activation="sigmoid", data_format="channels_last"))
+        model.add(Conv2D(filters=1, kernel_size=self.kernel_size,
+                         activation="sigmoid", data_format="channels_last"))
         model.add(Flatten())
         model.add(Dense(units=len(self.emotion_map.keys()), activation="sigmoid"))
         if self.verbose:
@@ -199,9 +228,11 @@ class ConvolutionalLstmNN(_FERNeuralNet):
         :param batch_size:
         :param epochs: number of times to train over input dataset.
         """
-        self.model.compile(optimizer="RMSProp", loss="cosine_proximity", metrics=["accuracy"])
+        self.model.compile(optimizer="RMSProp",
+                           loss="cosine_proximity", metrics=["accuracy"])
         self.model.fit(features, labels, batch_size=batch_size, epochs=epochs, validation_split=validation_split,
-                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3)])
+                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=5)])
+
 
 class ConvolutionalNN(_FERNeuralNet):
     """
@@ -217,7 +248,8 @@ class ConvolutionalNN(_FERNeuralNet):
 
     **Example**::
 
-        net = ConvolutionalNN(target_dimensions=(64,64), channels=1, target_labels=[0,1,2,3,4,5,6], time_delay=3)
+        net = ConvolutionalNN(target_dimensions=(64,64), channels=1, target_labels=[
+                              0,1,2,3,4,5,6], time_delay=3)
         net.fit(features, labels, validation_split=0.15)
 
     """
@@ -265,9 +297,11 @@ class ConvolutionalNN(_FERNeuralNet):
         :param batch_size:
         :param epochs: number of times to train over input dataset.
         """
-        self.model.compile(optimizer="RMSProp", loss="cosine_proximity", metrics=["accuracy"])
+        self.model.compile(optimizer="RMSProp",
+                           loss="cosine_proximity", metrics=["accuracy"])
         self.model.fit(image_data, labels, epochs=epochs, validation_split=validation_split,
-                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3)])
+                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=5)])
+
 
 class ConvolutionalNNDropout(_FERNeuralNet):
     """
@@ -283,7 +317,8 @@ class ConvolutionalNNDropout(_FERNeuralNet):
 
     **Example**::
 
-        net = ConvolutionalNNDropout(target_dimensions=(64,64), channels=1, target_labels=[0,1,2,3,4,5,6], time_delay=3)
+        net = ConvolutionalNNDropout(target_dimensions=(
+            64,64), channels=1, target_labels=[0,1,2,3,4,5,6], time_delay=3)
         net.fit(features, labels, validation_split=0.15)
 
     """
@@ -332,7 +367,6 @@ class ConvolutionalNNDropout(_FERNeuralNet):
 
         model.add(Flatten())
 
-
         model.add(Dense(units=len(self.emotion_map.keys()), activation="softmax"))
         if self.verbose:
             model.summary()
@@ -348,9 +382,11 @@ class ConvolutionalNNDropout(_FERNeuralNet):
         :param batch_size:
         :param epochs: number of times to train over input dataset.
         """
-        self.model.compile(optimizer=Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-7), loss=categorical_crossentropy, metrics=['accuracy'])
+        self.model.compile(optimizer=Adam(lr=0.001, beta_1=0.9, beta_2=0.999,
+                                          epsilon=1e-7), loss=categorical_crossentropy, metrics=['accuracy'])
         self.model.fit(image_data, labels, epochs=epochs, validation_split=validation_split,
-                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3)])
+                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=5)])
+
 
 class TimeDelayConvNN(_FERNeuralNet):
     """
@@ -393,12 +429,14 @@ class TimeDelayConvNN(_FERNeuralNet):
                          kernel_size=self.kernel_size, activation='relu', data_format='channels_last'))
         model.add(
             Conv3D(filters=self.filters, kernel_size=self.kernel_size, activation='relu', data_format='channels_last'))
-        model.add(MaxPooling3D(pool_size=(1, 2, 2), data_format='channels_last'))
+        model.add(MaxPooling3D(pool_size=(1, 2, 2),
+                               data_format='channels_last'))
         model.add(
             Conv3D(filters=self.filters, kernel_size=self.kernel_size, activation='relu', data_format='channels_last'))
         model.add(
             Conv3D(filters=self.filters, kernel_size=self.kernel_size, activation='relu', data_format='channels_last'))
-        model.add(MaxPooling3D(pool_size=(1, 2, 2), data_format='channels_last'))
+        model.add(MaxPooling3D(pool_size=(1, 2, 2),
+                               data_format='channels_last'))
 
         model.add(Flatten())
         model.add(Dense(units=len(self.emotion_map.keys()), activation="relu"))
@@ -416,6 +454,7 @@ class TimeDelayConvNN(_FERNeuralNet):
         :param batch_size:
         :param epochs: number of times to train over input dataset.
         """
-        self.model.compile(optimizer="RMSProp", loss="cosine_proximity", metrics=["accuracy"])
+        self.model.compile(optimizer="RMSProp",
+                           loss="cosine_proximity", metrics=["accuracy"])
         self.model.fit(image_data, labels, epochs=epochs, validation_split=validation_split,
-                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3)])
+                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=5)])

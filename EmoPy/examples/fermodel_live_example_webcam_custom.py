@@ -10,14 +10,19 @@ import json
 # 48x48 for fer2013
 # 100x100 for Cohn-Kanade
 # 64x64 for fer2013_oarriaga.hdf5 and fer2013_omar178.hdf5
-img_width = 48
-img_height = 48
+img_width = 64
+img_height = 64
 
 face_detector = cv2.CascadeClassifier(
     './haarcascade_frontalface_default.xml')
 
 # Load a model. Choose from /output folder
-classifier = load_model("./output/CK_subset_conv_dropout_5.h5")
+classifier = load_model(
+    "./output/fer2013_oarriaga.hdf5")
+
+# classifier = model_from_json(
+#     open("./output/model_4layer_2_2_pool.json", "r").read())
+# classifier.load_weights('./output/model_4layer_2_2_pool.h5')
 
 # For fer_25 and fer_5, use this instead:
 # classifier = model_from_json(
@@ -28,12 +33,12 @@ classifier = load_model("./output/CK_subset_conv_dropout_5.h5")
 # class_labels = ['angry', 'disgust', 'fear',
 #                 'happy', 'sad', 'surprise', 'neutral']
 
-class_labels = ['surprise', 'sadness', 'neutral', 'happiness', 'anger']
-
+# class_labels = ['surprise', 'happiness', 'anger']
+class_labels = ['Anger', 'Anger', 'Surprise',
+                'Happy', 'Sad', 'Surprise', 'Neutral']
 # These labels are used for "ck_aswinMatthewsAshok.h5" which use Cohn-Kanade.
 # class_labels = ["Neutral", "Angry", "Contempt",
 #                 "Disgust", "Fear", "Happy", "Sadness", "Surprise"]
-
 cap = cv2.VideoCapture(0)
 
 while True:
@@ -42,14 +47,14 @@ while True:
     labels = []
 
     # Convert to greyscale to remove some noise.
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_detector.detectMultiScale(gray, 1.3, 5)
+    grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = face_detector.detectMultiScale(grey, 1.3, 5)
 
     for (x, y, w, h) in faces:
         cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
 
         # Cut out the face region in the frame and resize it to the specified size.
-        roi_gray = gray[y:y+h, x:x+w]
+        roi_gray = grey[y:y+h, x:x+w]
         roi_gray = cv2.resize(roi_gray, (img_width, img_height),
                               interpolation=cv2.INTER_AREA)
 

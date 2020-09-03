@@ -5,6 +5,7 @@ import numpy as np
 import json
 from pkg_resources import resource_filename
 
+
 class FERModel:
     """
     Pretrained deep learning model for facial expression recognition.
@@ -21,7 +22,8 @@ class FERModel:
 
     """
 
-    POSSIBLE_EMOTIONS = ['anger', 'fear', 'calm', 'sadness', 'happiness', 'surprise', 'disgust']
+    POSSIBLE_EMOTIONS = ['anger', 'fear', 'calm',
+                         'sadness', 'happiness', 'surprise', 'disgust']
 
     def __init__(self, target_emotions, verbose=False):
         self.target_emotions = target_emotions
@@ -41,7 +43,8 @@ class FERModel:
         self._initialize_model()
 
     def _initialize_model(self):
-        print('Initializing FER model parameters for target emotions: %s' % self.target_emotions)
+        print('Initializing FER model parameters for target emotions: %s' %
+              self.target_emotions)
         self.model, self.emotion_map = self._choose_model_from_target_emotions()
 
     def predict(self, image_file):
@@ -62,8 +65,10 @@ class FERModel:
         gray_image = image_array
         if len(image_array.shape) > 2:
             gray_image = cv2.cvtColor(image_array, code=cv2.COLOR_BGR2GRAY)
-        resized_image = cv2.resize(gray_image, self.target_dimensions, interpolation=cv2.INTER_LINEAR)
-        final_image = np.array([np.array([resized_image]).reshape(list(self.target_dimensions)+[self.channels])])
+        resized_image = cv2.resize(
+            gray_image, self.target_dimensions, interpolation=cv2.INTER_LINEAR)
+        final_image = np.array([np.array([resized_image]).reshape(
+            list(self.target_dimensions)+[self.channels])])
         prediction = self.model.predict(final_image)
         # Return the dominant expression
         dominant_expression = self._print_prediction(prediction[0])
@@ -74,7 +79,8 @@ class FERModel:
         Validates set of user-supplied target emotions.
         """
         supported_emotion_subsets = [
-            set(['calm', 'anger', 'happiness', 'surprise', 'disgust', 'fear', 'sadness']),
+            set(['calm', 'anger', 'happiness', 'surprise',
+                 'disgust', 'fear', 'sadness']),
             set(['anger', 'fear', 'surprise', 'calm']),
             set(['happiness', 'disgust', 'surprise']),
             set(['anger', 'fear', 'surprise']),
@@ -99,22 +105,25 @@ class FERModel:
         """
         Initializes pre-trained deep learning model for the set of target emotions supplied by user.
         """
-        model_indices = [self.emotion_index_map[emotion] for emotion in self.target_emotions]
+        model_indices = [self.emotion_index_map[emotion]
+                         for emotion in self.target_emotions]
         sorted_indices = [str(idx) for idx in sorted(model_indices)]
         model_suffix = ''.join(sorted_indices)
-        #Modify the path to choose the model file and the emotion map that you want to use
-        if(model_suffix == '0123456'):
-            model_file = 'models/conv_model_%s.h5' % model_suffix
-        else:
-            model_file = 'models/conv_model_%s.hdf5' % model_suffix
-        emotion_map_file = 'models/conv_emotion_map_%s.json' % model_suffix
-        emotion_map = json.loads(open(resource_filename('EmoPy', emotion_map_file)).read())
+        # Modify the path to choose the model file and the emotion map that you want to use
+        # if(model_suffix == '0123456'):
+        #     model_file = 'examples/output/conv_model_%s.h5'
+        # else:
+        model_file = 'examples/output/conv_model_dropout_03456.h5'
+        emotion_map_file = 'examples/output/conv_dropout_emotion_map_03456.json'
+        emotion_map = json.loads(
+            open(resource_filename('EmoPy', emotion_map_file)).read())
         return load_model(resource_filename('EmoPy', model_file)), emotion_map
 
     def _print_prediction(self, prediction):
         normalized_prediction = [x/sum(prediction) for x in prediction]
         for emotion in self.emotion_map.keys():
-            print('%s: %.1f%%' % (emotion, normalized_prediction[self.emotion_map[emotion]]*100))
+            print('%s: %.1f%%' %
+                  (emotion, normalized_prediction[self.emotion_map[emotion]]*100))
         dominant_emotion_index = np.argmax(prediction)
         for emotion in self.emotion_map.keys():
             if dominant_emotion_index == self.emotion_map[emotion]:
