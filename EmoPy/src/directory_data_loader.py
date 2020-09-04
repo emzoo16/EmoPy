@@ -16,7 +16,7 @@ class DirectoryDataLoader(_DataLoader):
     :param time_delay: Number of images to load from each time series sample. Parameter must be provided to load time series data and unspecified if using static image data.
     """
 
-    def __init__(self, target_emotion_map=None, datapath=None, validation_split=0.2, out_channels=3, time_delay=None):
+    def __init__(self, target_emotion_map=None, datapath=None, validation_split=0.2, out_channels=1, time_delay=None):
         self.datapath = datapath
         self.target_emotion_map = target_emotion_map
         self.out_channels = out_channels
