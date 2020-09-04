@@ -1,20 +1,26 @@
+import keras
 from keras.applications.inception_v3 import InceptionV3
 from keras.applications.xception import Xception
 from keras.applications.vgg16 import VGG16
 from keras.applications.vgg19 import VGG19
 from keras.applications.resnet50 import ResNet50
 from keras.callbacks import ReduceLROnPlateau, EarlyStopping
+from keras.engine import Layer
+from keras.engine.saving import load_model
 from keras.layers import Dense, Flatten, GlobalAveragePooling2D, Conv2D, ConvLSTM2D, Conv3D, MaxPooling2D, Dropout, \
-    MaxPooling3D
+    MaxPooling3D, K
 from keras.layers.normalization import BatchNormalization
 from keras.losses import categorical_crossentropy
 from keras.models import Model, Sequential
 from keras.regularizers import l2
-from keras.optimizers import Adam
+from keras.optimizers import Adam, Adamax
 from keras.utils import plot_model
 import json
 
 from EmoPy.src.callback import PlotLosses
+from keras_preprocessing.image import ImageDataGenerator
+
+from EmoPy.src.customLayer import SliceLayer, ChannelShuffle, PadZeros
 
 
 class _FERNeuralNet(object):
@@ -35,20 +41,11 @@ class _FERNeuralNet(object):
             "Class %s doesn't implement fit()" % self.__class__.__name__)
 
     def fit_generator(self, generator, validation_data=None, epochs=50):
-        # self.model.compile(optimizer="RMSProp", loss="cosine_proximity", metrics=["accuracy"])
+        #self.model.compile(optimizer="RMSProp", loss="cosine_proximity", metrics=["accuracy"])
         self.model.compile(optimizer=Adam(lr=0.001, beta_1=0.9, beta_2=0.999,
                                           epsilon=1e-7), loss=categorical_crossentropy, metrics=['accuracy'])
-        history = self.model.fit_generator(generator=generator, validation_data=validation_data, epochs=epochs,
-                                           callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=5), PlotLosses()])
-        return history
-
-    def continue_training_model(self, model, generator, validation_data=None, epochs=50):
-        self.model.compile(optimizer=Adam(lr=0.001, beta_1=0.9, beta_2=0.999,
-                                          epsilon=1e-7), loss=categorical_crossentropy, metrics=['accuracy'])
-        history = model.fit_generator(generator=generator, validation_data=validation_data, epochs=epochs,
-                                      callbacks=[ReduceLROnPlateau(), EarlyStopping(
-                                          patience=5), PlotLosses()])
-        return history
+        self.model.fit_generator(generator=generator, validation_data=validation_data, epochs=epochs,
+                                 callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3), PlotLosses()])
 
     def predict(self, images):
         self.model.predict(images)
@@ -67,26 +64,15 @@ class _FERNeuralNet(object):
         with open(emotion_map_filepath, 'w') as fp:
             json.dump(emotion_map, fp)
 
-    def save_model(self, model_filepath, emotion_map_filepath, emotion_map):
-        self.model.save(model_filepath)
-
-        with open(emotion_map_filepath, 'w') as fp:
-            json.dump(emotion_map, fp)
-
 
 class TransferLearningNN(_FERNeuralNet):
     """
     Transfer Learning Convolutional Neural Network initialized with pretrained weights.
-
     :param model_name: name of pretrained model to use for initial weights. Options: ['Xception', 'VGG16', 'VGG19', 'ResNet50', 'InceptionV3', 'InceptionResNetV2']
     :param emotion_map: dict of target emotion label keys with int values corresponding to the index of the emotion probability in the prediction output array
-
     **Example**::
-
-        model = TransferLearningNN(
-            model_name='inception_v3', target_labels=[0,1,2,3,4,5,6])
+        model = TransferLearningNN(model_name='inception_v3', target_labels=[0,1,2,3,4,5,6])
         model.fit(images, labels, validation_split=0.15)
-
     """
     _NUM_BOTTOM_LAYERS_TO_RETRAIN = 249
 
@@ -108,7 +94,6 @@ class TransferLearningNN(_FERNeuralNet):
             self.emotion_map.keys()), activation='softmax')(top_layer_model)
 
         model = Model(input=base_model.input, output=prediction_layer)
-        print("model summary\n")
         print(model.summary())
         for layer in base_model.layers:
             layer.trainable = False
@@ -122,29 +107,28 @@ class TransferLearningNN(_FERNeuralNet):
         :return: base model from Keras based on user-supplied model name
         """
         if self.model_name == 'inception_v3':
-            return InceptionV3(weights='imagenet', include_top=False, input_shape=(128, 128, 3))
+            return InceptionV3(weights='imagenet', include_top=False)
         elif self.model_name == 'xception':
-            return Xception(weights='imagenet', include_top=False, input_shape=(128, 128, 3))
+            return Xception(weights='imagenet', include_top=False)
         elif self.model_name == 'vgg16':
-            return VGG16(weights='imagenet', include_top=False, input_shape=(128, 128, 3))
+            return VGG16(weights='imagenet', include_top=False)
         elif self.model_name == 'vgg19':
-            return VGG19(weights='imagenet', include_top=False, input_shape=(128, 128, 3))
+            return VGG19(weights='imagenet', include_top=False)
         elif self.model_name == 'resnet50':
-            return ResNet50(weights='imagenet', include_top=False, input_shape=(128, 128, 3))
+            return ResNet50(weights='imagenet', include_top=False)
         else:
             raise ValueError('Cannot find base model %s' % self.model_name)
 
     def fit(self, features, labels, validation_split, epochs=50):
         """
         Trains the neural net on the data provided.
-
         :param features: Numpy array of training data.
         :param labels: Numpy array of target (label) data.
         :param validation_split: Float between 0 and 1. Percentage of training data to use for validation
         :param epochs: Max number of times to train over dataset.
         """
         self.model.fit(x=features, y=labels, epochs=epochs, verbose=1,
-                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=5)], validation_split=validation_split,
+                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3)], validation_split=validation_split,
                        shuffle=True)
 
         for layer in self.model.layers[:self._NUM_BOTTOM_LAYERS_TO_RETRAIN]:
@@ -155,14 +139,13 @@ class TransferLearningNN(_FERNeuralNet):
         self.model.compile(
             optimizer='sgd', loss='categorical_crossentropy', metrics=['accuracy'])
         self.model.fit(x=features, y=labels, epochs=50, verbose=1,
-                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=5)], validation_split=validation_split,
+                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3)], validation_split=validation_split,
                        shuffle=True)
 
 
 class ConvolutionalLstmNN(_FERNeuralNet):
     """
     Convolutional Long Short Term Memory Neural Network.
-
     :param image_size: dimensions of input images
     :param channels: number of image channels
     :param emotion_map: dict of target emotion label keys with int values corresponding to the index of the emotion probability in the prediction output array
@@ -171,13 +154,9 @@ class ConvolutionalLstmNN(_FERNeuralNet):
     :param kernel_size: size of sliding window for each layer of CNN
     :param activation: name of activation function for CNN
     :param verbose: if true, will print out extra process information
-
     **Example**::
-
-        net = ConvolutionalLstmNN(target_dimensions=(
-            64,64), channels=1, target_labels=[0,1,2,3,4,5,6], time_delay=3)
+        net = ConvolutionalLstmNN(target_dimensions=(64,64), channels=1, target_labels=[0,1,2,3,4,5,6], time_delay=3)
         net.fit(features, labels, validation_split=0.15)
-
     """
 
     def __init__(self, image_size, channels, emotion_map, time_delay=2, filters=10, kernel_size=(4, 4),
@@ -221,7 +200,6 @@ class ConvolutionalLstmNN(_FERNeuralNet):
     def fit(self, features, labels, validation_split, batch_size=10, epochs=50):
         """
         Trains the neural net on the data provided.
-
         :param features: Numpy array of training data.
         :param labels: Numpy array of target (label) data.
         :param validation_split: Float between 0 and 1. Percentage of training data to use for validation
@@ -231,13 +209,12 @@ class ConvolutionalLstmNN(_FERNeuralNet):
         self.model.compile(optimizer="RMSProp",
                            loss="cosine_proximity", metrics=["accuracy"])
         self.model.fit(features, labels, batch_size=batch_size, epochs=epochs, validation_split=validation_split,
-                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=5)])
+                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3)])
 
 
 class ConvolutionalNN(_FERNeuralNet):
     """
     2D Convolutional Neural Network
-
     :param image_size: dimensions of input images
     :param channels: number of image channels
     :param emotion_map: dict of target emotion label keys with int values corresponding to the index of the emotion probability in the prediction output array
@@ -245,13 +222,9 @@ class ConvolutionalNN(_FERNeuralNet):
     :param kernel_size: size of sliding window for each layer of CNN
     :param activation: name of activation function for CNN
     :param verbose: if true, will print out extra process information
-
     **Example**::
-
-        net = ConvolutionalNN(target_dimensions=(64,64), channels=1, target_labels=[
-                              0,1,2,3,4,5,6], time_delay=3)
+        net = ConvolutionalNN(target_dimensions=(64,64), channels=1, target_labels=[0,1,2,3,4,5,6], time_delay=3)
         net.fit(features, labels, validation_split=0.15)
-
     """
 
     def __init__(self, image_size, channels, emotion_map, filters=10, kernel_size=(4, 4), activation='relu',
@@ -290,7 +263,6 @@ class ConvolutionalNN(_FERNeuralNet):
     def fit(self, image_data, labels, validation_split, epochs=50):
         """
         Trains the neural net on the data provided.
-
         :param image_data: Numpy array of training data.
         :param labels: Numpy array of target (label) data.
         :param validation_split: Float between 0 and 1. Percentage of training data to use for validation
@@ -300,13 +272,12 @@ class ConvolutionalNN(_FERNeuralNet):
         self.model.compile(optimizer="RMSProp",
                            loss="cosine_proximity", metrics=["accuracy"])
         self.model.fit(image_data, labels, epochs=epochs, validation_split=validation_split,
-                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=5)])
+                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3)])
 
 
 class ConvolutionalNNDropout(_FERNeuralNet):
     """
     2D Convolutional Neural Network implementing Dropout and batch normalization
-
     :param image_size: dimensions of input images
     :param channels: number of image channels
     :param emotion_map: dict of target emotion label keys with int values corresponding to the index of the emotion probability in the prediction output array
@@ -314,13 +285,9 @@ class ConvolutionalNNDropout(_FERNeuralNet):
     :param kernel_size: size of sliding window for each layer of CNN
     :param activation: name of activation function for CNN
     :param verbose: if true, will print out extra process information
-
     **Example**::
-
-        net = ConvolutionalNNDropout(target_dimensions=(
-            64,64), channels=1, target_labels=[0,1,2,3,4,5,6], time_delay=3)
+        net = ConvolutionalNNDropout(target_dimensions=(64,64), channels=1, target_labels=[0,1,2,3,4,5,6], time_delay=3)
         net.fit(features, labels, validation_split=0.15)
-
     """
 
     def __init__(self, image_size, channels, emotion_map, filters=10, kernel_size=(4, 4), activation='relu',
@@ -375,7 +342,6 @@ class ConvolutionalNNDropout(_FERNeuralNet):
     def fit(self, image_data, labels, validation_split, epochs=50):
         """
         Trains the neural net on the data provided.
-
         :param image_data: Numpy array of training data.
         :param labels: Numpy array of target (label) data.
         :param validation_split: Float between 0 and 1. Percentage of training data to use for validation
@@ -385,13 +351,12 @@ class ConvolutionalNNDropout(_FERNeuralNet):
         self.model.compile(optimizer=Adam(lr=0.001, beta_1=0.9, beta_2=0.999,
                                           epsilon=1e-7), loss=categorical_crossentropy, metrics=['accuracy'])
         self.model.fit(image_data, labels, epochs=epochs, validation_split=validation_split,
-                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=5)])
+                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3)])
 
 
 class TimeDelayConvNN(_FERNeuralNet):
     """
     The Time-Delayed Convolutional Neural Network model is a 3D-Convolutional network that trains on 3-dimensional temporal image data. One training sample will contain n number of images from a series and its emotion label will be that of the most recent image.
-
     :param image_size: dimensions of input images
     :param time_delay: number of past time steps included in each training sample
     :param channels: number of image channels
@@ -400,12 +365,9 @@ class TimeDelayConvNN(_FERNeuralNet):
     :param kernel_size: size of sliding window for each layer of CNN
     :param activation: name of activation function for CNN
     :param verbose: if true, will print out extra process information
-
     **Example**::
-
         model = TimeDelayConvNN(target_dimensions={64,64), time_delay=3, channels=1, label_count=6)
         model.fit(image_data, labels, validation_split=0.15)
-
     """
 
     def __init__(self, image_size, channels, emotion_map, time_delay, filters=32, kernel_size=(1, 4, 4),
@@ -447,7 +409,6 @@ class TimeDelayConvNN(_FERNeuralNet):
     def fit(self, image_data, labels, validation_split, epochs=50):
         """
         Trains the neural net on the data provided.
-
         :param image_data: Numpy array of training data.
         :param labels: Numpy array of target (label) data.
         :param validation_split: Float between 0 and 1. Percentage of training data to use for validation
@@ -457,4 +418,55 @@ class TimeDelayConvNN(_FERNeuralNet):
         self.model.compile(optimizer="RMSProp",
                            loss="cosine_proximity", metrics=["accuracy"])
         self.model.fit(image_data, labels, epochs=epochs, validation_split=validation_split,
-                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=5)])
+                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3)])
+
+
+class CGP_CNN(_FERNeuralNet):
+    """
+        A Convolutional Neural Network model which was automatically found using a Cartesian Genetic Programming library.
+        https://github.com/scheckmedia/cgp-cnn-design
+        :param emotion_map: dict of target emotion label keys with int values corresponding to the index of the emotion probability in the prediction output array
+        :param verbose: if true, will print out extra process information
+    """
+
+    def __init__(self, emotion_map, verbose=False):
+        self.verbose = verbose
+        super().__init__(emotion_map)
+
+    def _init_model(self):
+        """
+                Loads the network from the h5 file.
+        """
+        model = load_model("../models/gcp-cnn.h5", custom_objects={'SliceLayer': SliceLayer, 'ChannelShuffle': ChannelShuffle,
+                                                                   'PadZeros': PadZeros})
+        if self.verbose:
+            model.summary()
+        self.model = model
+
+    def fit(self, x_train, y_train):
+        """
+                Trains the neural net on the data provided.
+                :param x_train: Train Data in the format: [:,48,48,1]
+                :param y_train: Label Data in the format: [:,7]
+        """
+        datagen = ImageDataGenerator(
+            width_shift_range=0.1,
+            height_shift_range=0.1,
+            rotation_range=1,
+            horizontal_flip=True)
+        callback_LR = keras.callbacks.ReduceLROnPlateau(
+            monitor="val_acc",
+            factor=0.75,
+            patience=10,
+            verbose=1,
+            mode='auto',
+            min_delta=0.00001,
+            min_lr=0.0000001)
+        callback_LR.set_model(self.model)
+        callbacks = [callback_LR]
+        self.model.compile(loss='categorical_crossentropy',
+                           optimizer=Adamax(lr=0.001),
+                           metrics=['accuracy'])
+        history = self.model.fit_generator(datagen.flow(x_train, y_train, batch_size=32),
+                                           steps_per_epoch=(x_train.shape[0] // 32) + 1, verbose=1 if self.verbose else 0, epochs=1, callbacks=callbacks)
+        return history
