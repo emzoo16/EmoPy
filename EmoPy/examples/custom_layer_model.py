@@ -11,10 +11,10 @@ import pandas as pd
 
 from pkg_resources import resource_filename, resource_exists
 
-dataset = "ferplus_subset"
+dataset = "ferplus_sorted"
 model_name = "custom"
 batch_size = 64
-epochs = 1
+epochs = 50
 
 model_file_name = dataset + "_" + model_name + \
     str(epochs)
@@ -50,7 +50,7 @@ model = CGP_CNN(emotion_map, verbose=True)
 print("shape " + str(train_images.shape[0]) + " " + str(train_labels.shape[0]))
 
 # neuralnets.fit_generator not keras.models.fit_generator
-history = model.fit(train_images, train_labels)
+history = model.fit(train_images, train_labels, epochs=epochs)
 
 hist_df = pd.DataFrame(history.history)
 

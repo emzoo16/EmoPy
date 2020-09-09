@@ -11,7 +11,7 @@ import pandas as pd
 
 from pkg_resources import resource_filename, resource_exists
 
-dataset = "ferplus_subset"
+dataset = "ferplus_sorted"
 model_name = "deep_conv_dropout"
 batch_size = 64
 epochs = 100

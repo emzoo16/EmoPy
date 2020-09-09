@@ -4,7 +4,7 @@ from keras.applications.xception import Xception
 from keras.applications.vgg16 import VGG16
 from keras.applications.vgg19 import VGG19
 from keras.applications.resnet50 import ResNet50
-from keras.callbacks import ReduceLROnPlateau, EarlyStopping
+from keras.callbacks import ReduceLROnPlateau, EarlyStopping, ModelCheckpoint
 from keras.engine import Layer
 from keras.engine.saving import load_model
 from keras.layers import Dense, Flatten, GlobalAveragePooling2D, Conv2D, ConvLSTM2D, Conv3D, MaxPooling2D, Dropout, \
@@ -64,6 +64,11 @@ class _FERNeuralNet(object):
         with open(emotion_map_filepath, 'w') as fp:
             json.dump(emotion_map, fp)
 
+    def save_model(self, model_filepath, emotion_map_filepath, emotion_map):
+        self.model.save(model_filepath)
+
+        with open(emotion_map_filepath, 'w') as fp:
+            json.dump(emotion_map, fp)
 
 class TransferLearningNN(_FERNeuralNet):
     """
@@ -418,7 +423,7 @@ class TimeDelayConvNN(_FERNeuralNet):
         self.model.compile(optimizer="RMSProp",
                            loss="cosine_proximity", metrics=["accuracy"])
         self.model.fit(image_data, labels, epochs=epochs, validation_split=validation_split,
-                       callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3)])
+                       callbacks=[ReduceLROnPlateau(), EarlyStopping(monitor = "acc", patience=3)])
 
 
 class CGP_CNN(_FERNeuralNet):
@@ -443,7 +448,7 @@ class CGP_CNN(_FERNeuralNet):
             model.summary()
         self.model = model
 
-    def fit(self, x_train, y_train):
+    def fit(self, x_train, y_train, epochs=50):
         """
                 Trains the neural net on the data provided.
                 :param x_train: Train Data in the format: [:,48,48,1]
@@ -463,10 +468,14 @@ class CGP_CNN(_FERNeuralNet):
             min_delta=0.00001,
             min_lr=0.0000001)
         callback_LR.set_model(self.model)
-        callbacks = [callback_LR]
+        callbacks = [callback_LR, ModelCheckpoint('../examples/output/checkpoints/custom_dropout_weights.hd5',
+                                                     monitor='loss', verbose=1, save_best_only=True),
+                                EarlyStopping(monitor="acc", patience=5)]
         self.model.compile(loss='categorical_crossentropy',
                            optimizer=Adamax(lr=0.001),
                            metrics=['accuracy'])
         history = self.model.fit_generator(datagen.flow(x_train, y_train, batch_size=32),
-                                           steps_per_epoch=(x_train.shape[0] // 32) + 1, verbose=1 if self.verbose else 0, epochs=1, callbacks=callbacks)
+                                           steps_per_epoch=(x_train.shape[0] // 32) + 1, 
+                                           verbose=1 if self.verbose else 0, epochs=epochs, 
+                                           callbacks=callbacks)
         return history
