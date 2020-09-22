@@ -5,72 +5,92 @@ import cv2
 import numpy as np
 from keras.models import model_from_json
 import json
+from EmoPy.src.customLayer import SliceLayer, ChannelShuffle, PadZeros
 
-# The size of the image of the face used for classification:
-# 48x48 for fer2013
-# 100x100 for Cohn-Kanade
-# 64x64 for fer2013_oarriaga.hdf5 and fer2013_omar178.hdf5
-img_width = 64
-img_height = 64
+target_dimensions = (48, 48)
+channels = 1
+
+take_picture = True
 
 face_detector = cv2.CascadeClassifier(
     './haarcascade_frontalface_default.xml')
 
 # Load a model. Choose from /output folder
-classifier = load_model(
-    "./output/fer2013_oarriaga.hdf5")
+classifier = load_model("./output/custom.h5", custom_objects={'SliceLayer': SliceLayer,
+                                                              'ChannelShuffle': ChannelShuffle, 'PadZeros': PadZeros})
 
 # classifier = model_from_json(
-#     open("./output/model_4layer_2_2_pool.json", "r").read())
-# classifier.load_weights('./output/model_4layer_2_2_pool.h5')
+#     open("./output/customtest.json", "r").read(), custom_objects={'SliceLayer': SliceLayer, 'ChannelShuffle': ChannelShuffle,
+#                                                                   'PadZeros': PadZeros})
+# classifier.load_weights('./output/custom_weights.h5')
 
-# For fer_25 and fer_5, use this instead:
-# classifier = model_from_json(
-#     open("./models/model_4layer_2_2_pool.json", "r").read())
-# classifier.load_weights('./models/model_4layer_2_2_pool.h5')
+emotion_map = json.loads(
+    open("./output/custom_emotion_map_0123456.json").read())
 
-# These labels are used for models that use fer2013.
-# class_labels = ['angry', 'disgust', 'fear',
-#                 'happy', 'sad', 'surprise', 'neutral']
 
-# class_labels = ['surprise', 'happiness', 'anger']
-class_labels = ['Anger', 'Anger', 'Surprise',
-                'Happy', 'Sad', 'Surprise', 'Neutral']
-# These labels are used for "ck_aswinMatthewsAshok.h5" which use Cohn-Kanade.
-# class_labels = ["Neutral", "Angry", "Contempt",
-#                 "Disgust", "Fear", "Happy", "Sadness", "Surprise"]
+def process_image_for_prediction(image, take_picture):
+    resized_image = cv2.resize(
+        image, target_dimensions, interpolation=cv2.INTER_LINEAR)
+    final_image = np.array([np.array([resized_image]).reshape(
+        list(target_dimensions)+[channels])])
+    return final_image
+
+
+def print_prediction(prediction):
+    normalized_prediction = [x/sum(prediction) for x in prediction]
+    for emotion in emotion_map.keys():
+        print('%s: %.1f%%' %
+              (emotion, normalized_prediction[emotion_map[emotion]]*100))
+    print("\n")
+    dominant_emotion_index = np.argmax(prediction)
+
+    for emotion in emotion_map.keys():
+        if dominant_emotion_index == emotion_map[emotion]:
+            dominant_emotion = emotion
+            break
+
+    sadness_index = emotion_map["sadness"]
+    if(normalized_prediction[sadness_index] > 0.2):
+        dominant_emotion = "sadness"
+
+    anger_index = emotion_map["anger"]
+    if(normalized_prediction[anger_index] > 0.05):
+        dominant_emotion = "anger"
+
+    return dominant_emotion
+
+
 cap = cv2.VideoCapture(0)
 
 while True:
     # Get a single frame from the input camera.
     ret, frame = cap.read()
-    labels = []
 
     # Convert to greyscale to remove some noise.
     grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     faces = face_detector.detectMultiScale(grey, 1.3, 5)
 
     for (x, y, w, h) in faces:
-        cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+        # cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
 
         # Cut out the face region in the frame and resize it to the specified size.
         roi_gray = grey[y:y+h, x:x+w]
-        roi_gray = cv2.resize(roi_gray, (img_width, img_height),
-                              interpolation=cv2.INTER_AREA)
 
         if np.sum([roi_gray]) != 0:
-            roi = roi_gray.astype('float')/255.0
-            roi = img_to_array(roi)
-            roi = np.expand_dims(roi, axis=0)
+            processed_image = process_image_for_prediction(
+                roi_gray, take_picture)
 
-        # make a prediction on the region of interest, print the corresponding class
-            predictions = classifier.predict(roi)[0]
-            print(predictions)
-            label = class_labels[predictions.argmax()]
+            predictions = classifier.predict(processed_image)[0]
+
+            label = print_prediction(predictions)
             label_position = (x, y)
+
+            print("emotion: " + label)
+
             cv2.putText(frame, label, label_position,
                         cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3)
         else:
+            print("no face found")
             cv2.putText(frame, 'No Face Found', (20, 60),
                         cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3)
 

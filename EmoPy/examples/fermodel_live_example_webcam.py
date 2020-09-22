@@ -29,6 +29,12 @@ model = load_model("./output/fer2013_conv_dropout.h5")
 face_detector = cv2.CascadeClassifier(
     './haarcascade_frontalface_default.xml')
 
+
+def process_image_for_prediction(self, image):
+    print("shape")
+    print(str(image.shape))
+
+
 cap = cv2.VideoCapture(0)
 
 while True:
@@ -44,7 +50,8 @@ while True:
         cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
 
         # Cut out the face region in the frame and resize it to the specified size.
-        roi_gray = gray[y:y+h, x:x+w]
+        grey_face_image = gray[y:y+h, x:x+w]
+        process_image_for_prediction(grey_face_image)
 
         if np.sum([roi_gray]) != 0:
             roi = roi_gray.astype('float')/255.0
@@ -53,7 +60,7 @@ while True:
 
             prediction = model.predict(roi_gray)[0]
             prediction_position = (x, y)
-            print(prediction)
+            # print(prediction)
 
             cv2.putText(frame, prediction, prediction_position,
                         cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3)

@@ -4,6 +4,7 @@ from scipy import misc
 import numpy as np
 import json
 from pkg_resources import resource_filename
+from EmoPy.src.customLayer import SliceLayer, ChannelShuffle, PadZeros
 
 
 class FERModel:
@@ -89,7 +90,9 @@ class FERModel:
             set(['anger', 'fear', 'disgust']),
             set(['calm', 'disgust', 'surprise']),
             set(['sadness', 'disgust', 'surprise']),
-            set(['anger', 'happiness'])
+            set(['anger', 'happiness']),
+            set(['sadness', 'disgust', 'calm',
+                 'fear', 'happiness', 'anger', 'surprise'])
         ]
         if not set(self.target_emotions) in supported_emotion_subsets:
             error_string = 'Target emotions must be a supported subset. '
@@ -113,11 +116,12 @@ class FERModel:
         # if(model_suffix == '0123456'):
         #     model_file = 'examples/output/conv_model_%s.h5'
         # else:
-        model_file = 'examples/output/conv_model_dropout_03456.h5'
-        emotion_map_file = 'examples/output/conv_dropout_emotion_map_03456.json'
+        model_file = 'examples/output/custom.h5'
+        emotion_map_file = 'examples/output/custom_emotion_map_0123456.json'
         emotion_map = json.loads(
             open(resource_filename('EmoPy', emotion_map_file)).read())
-        return load_model(resource_filename('EmoPy', model_file)), emotion_map
+        return load_model(resource_filename('EmoPy', model_file), custom_objects={'SliceLayer': SliceLayer, 'ChannelShuffle': ChannelShuffle,
+                                                                                  'PadZeros': PadZeros}), emotion_map
 
     def _print_prediction(self, prediction):
         normalized_prediction = [x/sum(prediction) for x in prediction]

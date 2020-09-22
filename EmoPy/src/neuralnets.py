@@ -47,6 +47,14 @@ class _FERNeuralNet(object):
         self.model.fit_generator(generator=generator, validation_data=validation_data, epochs=epochs,
                                  callbacks=[ReduceLROnPlateau(), EarlyStopping(patience=3), PlotLosses()])
 
+    def continue_training_model(self, model, generator, validation_data=None, epochs=50):
+        self.model.compile(optimizer=Adam(lr=0.001, beta_1=0.9, beta_2=0.999,
+                                          epsilon=1e-7), loss=categorical_crossentropy, metrics=['accuracy'])
+        history = model.fit_generator(generator=generator, validation_data=validation_data, epochs=epochs,
+                                      callbacks=[ReduceLROnPlateau(), EarlyStopping(
+                                          patience=5), PlotLosses()])
+        return history
+
     def predict(self, images):
         self.model.predict(images)
 
@@ -69,6 +77,7 @@ class _FERNeuralNet(object):
 
         with open(emotion_map_filepath, 'w') as fp:
             json.dump(emotion_map, fp)
+
 
 class TransferLearningNN(_FERNeuralNet):
     """
@@ -423,7 +432,7 @@ class TimeDelayConvNN(_FERNeuralNet):
         self.model.compile(optimizer="RMSProp",
                            loss="cosine_proximity", metrics=["accuracy"])
         self.model.fit(image_data, labels, epochs=epochs, validation_split=validation_split,
-                       callbacks=[ReduceLROnPlateau(), EarlyStopping(monitor = "acc", patience=3)])
+                       callbacks=[ReduceLROnPlateau(), EarlyStopping(monitor="acc", patience=3)])
 
 
 class CGP_CNN(_FERNeuralNet):
@@ -448,6 +457,9 @@ class CGP_CNN(_FERNeuralNet):
             model.summary()
         self.model = model
 
+    def load_weights(self, path):
+        self.model.load_weights(path)
+
     def fit(self, x_train, y_train, epochs=50):
         """
                 Trains the neural net on the data provided.
@@ -468,14 +480,15 @@ class CGP_CNN(_FERNeuralNet):
             min_delta=0.00001,
             min_lr=0.0000001)
         callback_LR.set_model(self.model)
-        callbacks = [callback_LR, ModelCheckpoint('../examples/output/checkpoints/custom_dropout_weights.hd5',
-                                                     monitor='loss', verbose=1, save_best_only=True),
-                                EarlyStopping(monitor="acc", patience=5)]
+        callbacks = [callback_LR, ModelCheckpoint('../examples/output/checkpoints/custom_dropout_weights.hdf5',
+                                                  monitor='loss', verbose=1, save_best_only=True),
+                     EarlyStopping(monitor="acc", patience=5)]
         self.model.compile(loss='categorical_crossentropy',
                            optimizer=Adamax(lr=0.001),
                            metrics=['accuracy'])
         history = self.model.fit_generator(datagen.flow(x_train, y_train, batch_size=32),
-                                           steps_per_epoch=(x_train.shape[0] // 32) + 1, 
-                                           verbose=1 if self.verbose else 0, epochs=epochs, 
+                                           steps_per_epoch=(
+                                               x_train.shape[0] // 32) + 1,
+                                           verbose=1 if self.verbose else 0, epochs=epochs,
                                            callbacks=callbacks)
         return history
